@@ -107,7 +107,65 @@ for ci = 1:2
 end
 writetable(S4, fullfile(outDir, 'pulse_timing.csv'));
 
+%% 5) Reference oscillator: guessed table vs. sourced TCXO h-coefficients ----
+% Typical TCXO: h0 = 9.4e-20, h-2 = 3.8e-21 (Kassas, Ghadiok, Humphreys, ION
+% GNSS+ 2014, Table I); that source drops the flicker term h-1 = 1.8e-19 given by
+% Curran et al. 2012, Table I (after Van Dierendonck 1984). A white PM floor of
+% -155 dBc/Hz, as in the guessed table, is added to both.
+fprintf('\n== 5. Reference oscillator profile (X310 chain) ==\n');
+fm = logspace(-2, 6, 41);
+oscs = {[], osc_from_h(fm, 9.4e-20, 0, 3.8e-21, -155), osc_from_h(fm, 9.4e-20, 1.8e-19, 3.8e-21, -155)};
+oname = {'guess', 'h 2-term', 'h 3-term'};
+tau_a = [1e-3 1e-2 0.1 1];
+for oi = 1:3
+    o = struct('paramsOnly', true, 'verbose', false, 'chain', chX);
+    if ~isempty(oscs{oi}), o.osc = oscs{oi}; end
+    p = sdr_clock_model_tworate(o);
+    fprintf('  %-8s L(f) at 1, 10, 100, 1k Hz: %s dBc/Hz;  ADEV at %s s: %s\n', oname{oi}, ...
+        mat2str(round(10*log10(p.analytic_psd([1 10 100 1e3])*[1;0;0]/2).', 1)), mat2str(tau_a), ...
+        mat2str(adev_from_S(@(f) p.analytic_psd(f)*[1;0;0], p.opts.osc.f0, tau_a), 2));
+end
+% clock-only contribution (sigT = 0), then with TWTT error at 27 dB
+tb5 = [1 5 20 40]*1e-3;
+S5 = table();
+for oi = 1:3
+    for e = [0 1 excess_paper]
+        for t = tb5
+            if e > 0 && t ~= 1e-3, continue; end
+            o = quiet; o.chain = chX; o.t_bf = t; o.seed = 300 + round(t*1e4);
+            if ~isempty(oscs{oi}), o.osc = oscs{oi}; end
+            if e == 0, o.timing = 'fixed'; o.sigT = 0; else, o.crlb_excess = e; end
+            r = sdr_clock_model_tworate(o);
+            S5 = [S5; table(string(oname{oi}), e, 1e3*t, r.phase_std_deg, 1e9*r.df_std, r.Gc_median, ...
+                r.Gc_p5, max(abs(r.psd_err_dB)), 'VariableNames', {'osc', 'excess', 't_bf_ms', ...
+                'phase_std_deg', 'df_std_ppb', 'Gc_median', 'Gc_p5', 'psd_err_dB'})];  %#ok<AGROW>
+            fprintf('  %-8s excess %.2f, pulse at %4.1f ms: phase %5.2f deg, df %5.3f ppb, Gc median %.4f (p5 %.4f), PSD err %.2f dB\n', ...
+                oname{oi}, e, 1e3*t, r.phase_std_deg, 1e9*r.df_std, r.Gc_median, r.Gc_p5, max(abs(r.psd_err_dB)));
+        end
+    end
+end
+writetable(S5, fullfile(outDir, 'oscillator.csv'));
+
 save(fullfile(outDir, 'studies_results.mat'), 'c', 'v1mf', 'excess_paper', 'd_lo', 'Lx', 'Ld', 'mL', ...
-    'S3', 'S4', 'snr', 'tbf');
+    'S3', 'S4', 'S5', 'snr', 'tbf');
 fprintf('\nOutputs in %s\n', outDir);
 diary off;
+
+function osc = osc_from_h(fm, h0, hm1, hm2, Lfloor)
+% L(f) table at 10 MHz from the power-law coefficients of S_y(f) = h0 + h-1/f + h-2/f^2
+% plus a white PM floor: S_phi = (f0/f)^2 S_y, L = S_phi/2.
+osc.f0 = 10e6;  osc.fm = fm;
+osc.L  = 10*log10((osc.f0./fm).^2.*(h0 + hm1./fm + hm2./fm.^2)/2 + 10^(Lfloor/10));
+end
+
+function a = adev_from_S(Sphi, f0, tau)
+% Allan deviation from a one-sided phase PSD (rad^2/Hz) at carrier f0, up to 2 MHz.
+% sin^4 is replaced by its mean 3/8 where it oscillates faster than the grid.
+f  = logspace(-5, log10(2e6), 2e4).';
+Sy = (f/f0).^2.*Sphi(f);
+a  = zeros(size(tau));
+for i = 1:numel(tau)
+    x = pi*tau(i)*f;  s4 = sin(x).^4;  s4(x > 20) = 3/8;
+    a(i) = sqrt(2*trapz(f, Sy.*s4./x.^2));
+end
+end

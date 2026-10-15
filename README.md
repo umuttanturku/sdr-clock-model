@@ -60,7 +60,7 @@ The result struct `res` holds the summary metrics (`time_std`, `df_std`, `phase_
 | `sdr_clock_model_tworate.m` | The model: two-rate phase-noise generator, stage-list noise chain, TWTT, frequency estimate, carrier compensation, coherent gain |
 | `chain_x310_from_merlo_flow.m` | Builds the X310 + UBX-160 chain from merlo_flow's datasheet parameters (read-only use) |
 | `compare_merlo_flow.m` | Comparison against merlo_flow and the paper (noise models, LO wander, end-to-end metrics) |
-| `run_studies.m` | Follow-up studies: CRLB check, X310 chain check, SNR sweep, pulse-timing sweep |
+| `run_studies.m` | Follow-up studies: CRLB check, X310 chain check, SNR sweep, pulse-timing sweep, reference-oscillator profile |
 | `clockmodel_paths.m`, `clockmodel_config_example.m` | Per-machine data and merlo_flow folders (see [Paths](#paths)) |
 | `sdr_clock_model.m` | First single-rate version (kept for reference; superseded by the two-rate model) |
 | `docs/MODEL.md` | How the model works, its assumptions and limits |
@@ -88,7 +88,7 @@ Large results are written to the data folder (or to `opts.outDir` if given): tim
 Details and sources: [docs/RESULTS.md](docs/RESULTS.md).
 
 - With the same inputs, this model and merlo_flow agree on median coherent gain to 0.2% (0.990 vs 0.991).
-- The paper's reported spreads (about 65 ps, 23° and 2 ppb at 27 dB) are reproduced by a TWTT time error of 3.2× the CRLB. Oscillator and PLL noise add only about 1° at 5 ms.
+- The paper's reported spreads (about 65 ps, 23° and 2 ppb at 27 dB) are reproduced by a TWTT time error of 3.2× the CRLB. With the guessed reference oscillator, oscillator and PLL noise add only about 1° at 5 ms; with published typical-TCXO coefficients they add about 7° at 5 ms and 33–36° at 40 ms, so the reference profile matters for late pulses.
 - Median coherent gain passes 0.99 at 21 dB SNR at the CRLB, but needs 30 dB at paper-level error.
 - Coherence falls the later a pulse fires in the 44 ms epoch, because Δf comes from two noisy timestamps. At paper-level error the median drops from 0.98 to 0.91.
 

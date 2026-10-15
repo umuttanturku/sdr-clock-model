@@ -32,12 +32,17 @@ pll:  out = H(f) · (κ · in + n_inband) + (1 − H(f)) · n_vco + n_floor
 div:  out = κ · in
 ```
 
-H(f) is a type-II, second-order closed loop with natural frequency `fn` and damping `zeta`. Each stage carries three PSD handles in rad²/Hz at its output: `Sinb` (in-band PFD/charge-pump/divider noise, low-passed by the loop), `Svco` (open-loop VCO, high-passed), and `Sfloor` (white, added after the loop). The SYS clock is the output of stage `i_sys`, divided by `sys_div`.
+H(f) is a type-II, second-order closed loop with natural frequency `fn` and damping `zeta`. `fn` is not the loop bandwidth: at ζ = 0.707 the −3 dB bandwidth of H is 2.058·fn. Each stage carries three PSD handles in rad²/Hz at its output: `Sinb` (in-band PFD/charge-pump/divider noise, low-passed by the loop), `Svco` (open-loop VCO, high-passed), and `Sfloor` (white, added after the loop). The SYS clock is the output of stage `i_sys`, divided by `sys_div`.
 
-- **Default chain** (`default_chain` in the model): SYS PLL ×20 to 200 MHz (100 kHz loop) and LO PLL ×10.5 to 2.1 GHz (50 kHz loop), with hand-picked VCO tables and in-band floors of −115 and −100 dBc/Hz. It sits about 10 dB above Ettus' measured UBX LO noise from 10 kHz to 1 MHz.
-- **X310 + UBX-160 chain** (`chain_x310_from_merlo_flow.m`): 10 MHz → PLL1 → 96 MHz VCXO → PLL2 → 2400 MHz → /48 → MAX2871 → 2.1 GHz, with SYS = 2400 MHz / 12. Stage values come from LMK04816, CVHD-950 and MAX2871 datasheets and UHD settings, with three constants fitted to Ettus' measured UBX phase noise. These were assembled by merlo_flow; this repo only reads them. It sits within 1.5 dB RMS of the measured curve.
+- **Default chain** (`default_chain` in the model): SYS PLL ×20 to 200 MHz (fn = 100 kHz, −3 dB bandwidth about 206 kHz) and LO PLL ×10.5 to 2.1 GHz (fn = 50 kHz, about 103 kHz), both at ζ = 0.707, with hand-picked VCO tables and in-band floors of −115 and −100 dBc/Hz. It sits about 10 dB above Ettus' measured UBX LO noise from 10 kHz to 1 MHz.
+- **X310 + UBX-160 chain** (`chain_x310_from_merlo_flow.m`): 10 MHz → PLL1 → 96 MHz VCXO → PLL2 → 2400 MHz → /48 → MAX2871 → 2.1 GHz, with SYS = 2400 MHz / 12. Stage values come from LMK04816, CVHD-950 and MAX2871 datasheets and UHD settings, with three constants fitted to Ettus' measured UBX phase noise. These were assembled by merlo_flow; this repo only reads them. After the fit it sits within 1.5 dB RMS of the measured curve. That is a fit, not a validation: three free constants (one in-band excess shared by all PLLs, the MAX2871 bandwidth, an output floor) were tuned to the same eight points, and the fit may be a local minimum.
 
-The reference oscillator is a guessed TCXO-like profile (−65 dBc/Hz at 1 Hz, ADEV floor about 9e-11). The X310's internal reference is a 2.5 ppm TCXO, but no measured profile is published.
+Known weaknesses of the X310 chain, all inherited from merlo_flow's parameters:
+- The loop bandwidths are assumed (PLL1 50 Hz, PLL2 100 kHz, both −3 dB, ζ = 0.707). Real loops are third or fourth order, and the X3xx schematic's loop filters suggest wider loops: PLL1 about 170–1100 Hz depending on the VCXO gain, PLL2 about 320–430 kHz (1.1–1.3 MHz on board revisions ≤ 4).
+- The VCXO and the LO VCO are stand-ins (CVHD-950, MAX2871 VCO); the X310's actual parts have no published noise data.
+- The fit target is Ettus' TX output noise (LO, mixer, DAC and amplifier) at 2.4 GHz, with the reference used for the measurement not stated; it is moved to 2.1 GHz by −1.2 dB without a separate check.
+
+The reference oscillator is a guessed TCXO-like profile (−65 dBc/Hz at 1 Hz, ADEV floor about 9e-11) with no source. The X310's internal reference is a 2.5 ppm TCXO, but no measured profile is published. Published typical-TCXO power-law coefficients (Kassas et al. 2014; Curran et al. 2012) are 12–22 dB noisier below 50 Hz and raise the clock's contribution several-fold at pulse delays of 5 ms and more; see `docs/RESULTS.md`. `run_studies.m` (`osc_from_h`) builds that profile as an `osc` table.
 
 ## Two-rate generation
 
@@ -73,7 +78,7 @@ Eq. 32 extrapolates the frequency estimate from the TWTT instant to the pulse. B
 σ(t) = σT · sqrt( (1 + t/τ)² + (t/τ)² ),   τ = tau_twtt
 ```
 
-That is about 2.1× σT at the end of a 44 ms epoch. LO wander over the same interval adds about 1° at 5 ms and 1–5° at 44 ms at 1 GHz, depending on the chain.
+That is about 2.1× σT at the end of a 44 ms epoch. With the guessed reference, LO wander over the same interval adds about 1° at 5 ms and 1–5° at 44 ms at 1 GHz, depending on the chain. With the published typical-TCXO coefficients it adds about 7° at 5 ms and 33–36° at 40 ms (X310 chain).
 
 ## Assumptions and limits
 

@@ -30,7 +30,7 @@ LO L(f) at 2.1 GHz against Ettus' measured UBX TX phase noise (datasheet, 2.4 GH
 | --- | --- | --- |
 | This model, default chain | 10.8 | +9.9 |
 | merlo_flow merlo2026 placeholder | 7.0 | −5.7 |
-| merlo_flow x310_ubx160 (datasheet-fitted) | 1.5 | +0.2 |
+| merlo_flow x310_ubx160 (datasheet stages, 3 constants fitted to this curve) | 1.5 | +0.2 |
 
 Reference oscillator ADEV: this model (TCXO-like) flattens at 9.4e-11 from 0.1 s; merlo_flow's power-law profile (OCXO-like) is 1.0e-11 at 1 s and still falling. Neither is measured.
 
@@ -57,7 +57,7 @@ At the paper's latencies this is small next to the 9.6–23° from TWTT time err
 | merlo_flow measured / bound | 1.29× |
 | Paper (~65 ps) / bound | 3.17× |
 | X310 LO PSD, this model vs merlo_flow `pll_chain_psd`, 1 kHz–1 MHz | max 0.000 dB difference |
-| X310 chain vs Ettus measured | 1.52 dB RMS (default chain: 10.83 dB) |
+| X310 chain vs Ettus measured (fit residual, not a validation; see MODEL.md) | 1.52 dB RMS (default chain: 10.83 dB) |
 | Generator, simulated vs analytic PSD, 1 Hz–1 MHz [osc, SYS, LO] | +0.02, +0.02, +0.03 dB (X310); +0.02, +0.03, +0.03 dB (default) |
 
 ### SNR sweep (pulse 1 ms after TWTT)
@@ -91,7 +91,35 @@ All columns, including the 5th percentile and Δf spread, are in `snr_sweep.csv`
 
 The timing-only prediction σT·√((1 + t/τ)² + (t/τ)²) tracks these values; the default chain gives curves within 8%.
 
+### Reference oscillator profile (X310 chain)
+
+Section 5 of `run_studies.m`, `oscillator.csv`. The guessed TCXO table against a typical TCXO built from published power-law coefficients: h0 = 9.4e-20, h₋₂ = 3.8e-21 (Kassas, Ghadiok, Humphreys, ION GNSS+ 2014, Table I), and the same plus the flicker term h₋₁ = 1.8e-19 that source drops (Curran et al. 2012, Table I, after Van Dierendonck 1984). Both get the guessed table's −155 dBc/Hz white PM floor.
+
+| Profile | L(f) at 1 / 10 / 100 / 1k Hz (dBc/Hz, 10 MHz) | ADEV at 1 ms / 10 ms / 0.1 s / 1 s |
+| --- | --- | --- |
+| Guess (default) | −65 / −95 / −120 / −140 | 1.0e-9 / 1.6e-10 / 9.5e-11 / 9.4e-11 |
+| h, 2 terms | −53 / −73 / −93 / −113 | 6.9e-9 / 2.2e-9 / 6.9e-10 / 2.7e-10 |
+| h, 3 terms | −49 / −73 / −93 / −113 | 6.9e-9 / 2.2e-9 / 8.5e-10 / 5.7e-10 |
+
+Clock-only residual (no TWTT error, σT = 0): spread of the pulse-mean phase at 1 GHz after compensating with the exchange's own Δf̂.
+
+| Pulse after TWTT | Guess | h, 2 terms | h, 3 terms |
+| --- | --- | --- | --- |
+| 1 ms | 0.24° | 1.41° | 1.47° |
+| 5 ms | 0.56° | 6.88° | 7.24° |
+| 20 ms | 1.64° | 20.1° | 21.7° |
+| 40 ms | 3.05° | 32.9° (median Gᴄ 0.962) | 36.5° (median Gᴄ 0.954) |
+| Δf̂ std from clock noise alone | 0.25–0.32 ppb | 1.6–1.8 ppb | 2.1–2.4 ppb |
+
+With TWTT error at 27 dB and the pulse at 1 ms, the profile hardly matters: phase std 7.27 / 7.41 / 7.41° at the bound and 23.0 / 23.1 / 23.1° at 3.17×. The Δf̂ spread does change, 0.69 / 1.82 / 2.47 ppb at the bound and 2.02 / 2.56 / 3.05 ppb at 3.17× (paper: 2.04 ppb).
+
+- The "oscillator and PLL add about 1°" result holds only for the guessed reference. With the published typical-TCXO coefficients the clock adds about 7° at 5 ms and 33–36° at 40 ms, comparable to the TWTT error, and late pulses lose much more coherence.
+- The two bracket the likely truth rather than settle it. The h-coefficients are a timekeeping fit, and their white FM term runs on to offsets where real TCXOs are quieter (−113 dBc/Hz at 1 kHz). Most of the reference's effect comes from below PLL1's 50 Hz loop bandwidth, where the two profiles differ by about 12–22 dB.
+- At 3.17× the h profiles give a Δf̂ spread of 2.6–3.0 ppb, above the paper's 2.04 ppb; the guess gives 2.02 ppb. Either the X310 reference is quieter than the typical-TCXO coefficients, or less of the paper's error is TWTT excess. A measured profile would decide.
+
 ## Open questions
+
+- The reference oscillator profile sets the clock's contribution at pulse delays of 5 ms and more (see above); it needs a measured X310 TCXO profile.
 
 - A 23° Gaussian phase spread gives a median Gᴄ of about 0.98, below the paper's "above 99%". The paper's figure may come from its best-SNR or optimized runs; check against the Fig. 11 data.
 - The 3.17× excess is fitted to one paper point. A fixed hardware floor added to the bound would behave differently at low SNR; the paper's Fig. 11 data would decide between the two.
