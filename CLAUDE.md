@@ -2,6 +2,8 @@
 
 MATLAB model of two free-running SDR clocks with oscillator and PLL phase noise, synchronized by two-way time transfer, after Merlo et al., IEEE TMTT 74(2), 2026. Read `README.md` first, then `docs/MODEL.md` (method) and `docs/RESULTS.md` (current numbers).
 
+Follow the design rules in @RULES.md for every code change.
+
 ## Environment
 
 - Windows laptop, MATLAB R2026b at `D:\ProgramFiles\bin\matlab.exe`, with Signal Processing, Communications, DSP System, RF, Optimization, Statistics, Control System and Simulink. This project uses only MATLAB and Signal Processing.

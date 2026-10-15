@@ -65,6 +65,7 @@ The result struct `res` holds the summary metrics (`time_std`, `df_std`, `phase_
 | `sdr_clock_model.m` | First single-rate version (kept for reference; superseded by the two-rate model) |
 | `docs/MODEL.md` | How the model works, its assumptions and limits |
 | `docs/RESULTS.md` | Comparison and study results, with the numbers and where they come from |
+| `RULES.md` | Design rules for changes: keep code small, efficient and consistent |
 | `CLAUDE.md` | Working notes for Claude Code sessions on this repo |
 
 ## Outputs
