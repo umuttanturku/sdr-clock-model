@@ -46,7 +46,8 @@ Follow the design rules in @RULES.md for every code change.
 
 1. Estimate Δf over several exchanges (longer baseline or Kalman filter) instead of from two timestamps, to cut the late-epoch coherence loss.
 2. Decide between a multiplicative CRLB excess (`crlb_excess`) and a fixed hardware floor, using the paper's Fig. 11 data.
-3. Replace the guessed TCXO reference profile with measured data (the Collmann X310 dataset on IEEE DataPort is subscription-only). This matters: published typical-TCXO coefficients raise the clock-only residual from 0.6° to 7° at 5 ms and from 3° to 33–36° at 40 ms (RESULTS.md, oscillator section).
+3. Replace the guessed TCXO reference profile with measured data (the Collmann X310 dataset on IEEE DataPort is subscription-only). This matters: published typical-TCXO coefficients raise the clock-only residual from 0.6° to 6.5° at 5 ms and from 3° to 34–36° at 40 ms (RESULTS.md, oscillator section).
+- Power-law oscillators (`osc.h`) use the Kasdin time-domain generator for the slow part; table oscillators use FFT shaping. Use `osc.h` for holdover studies. Long holdover (hours) still needs a lower `fs_slow`/`fsplit` and longer fast blocks, which is not done yet.
 4. Possible later: vibration term, separate TX/RX LOs, N > 2 nodes.
 
 ## Before pushing to GitHub

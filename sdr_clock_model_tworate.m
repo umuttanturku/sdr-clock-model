@@ -35,6 +35,14 @@ function res = sdr_clock_model_tworate(opts)
 % chain.sys_div. Default: my two-PLL tables. The X310 + UBX-160 chain built from
 % merlo_flow's datasheet parameters comes from chain_x310_from_merlo_flow.m.
 %
+% REFERENCE OSCILLATOR (opts.osc)
+%   .fm, .L : L(f) table (dBc/Hz at .f0), generated with the rest by FFT shaping
+%   .h      : power-law S_y coefficients [h2 h1 h0 h-1 h-2]. The slow part is then
+%             generated in the time domain with Kasdin's fractional-difference
+%             filter, started at rest at t = 0, so flicker and random-walk FM keep
+%             their non-stationary low-frequency wander (needed for holdover);
+%             the PLL loops and the split are applied as IIR filters.
+%
 % TWTT TIME ERROR (opts.timing)
 %   'crlb'  : sigma_T from the ToA CRLB (Eqs. 22, 24) at opts.snr_dB for the
 %             PTT waveform, times opts.crlb_excess (1 = the bound itself)
@@ -84,7 +92,13 @@ kprod  = cumprod([ch.stages.kappa]);
 f0_sys = f_osc*kprod(ch.i_sys)/ch.sys_div;
 f0_lo  = f_osc*kprod(end);
 kbf    = o.f_bf/f0_lo;                      % LO phase noise -> bf carrier
-Sosc   = @(af) S_from_L(o.osc.fm, o.osc.L, af);
+kasdin = isfield(o.osc, 'h');                % power-law oscillator, time-domain slow part
+if kasdin
+    assert(numel(o.osc.h) == 5 && mod(o.nsplit, 2) == 0, 'osc.h needs 5 coefficients and an even nsplit');
+    Sosc = @(af) S_from_h(f_osc, o.osc.h, af);
+else
+    Sosc = @(af) S_from_L(o.osc.fm, o.osc.L, af);
+end
 
 %% TWTT time error
 [sig_crlb, crlb] = twtt_crlb(o.snr_dB, o.ptt);
@@ -107,7 +121,12 @@ T   = N_s/o.fs_slow;
 t_s = (0:N_s-1).'/o.fs_slow;
 f_s = fftfreq(N_s, o.fs_slow);
 f_b = fftfreq(o.Nb, o.fs_fast);
-wfun = @(f) 1./(1 + (abs(f)/o.fsplit).^o.nsplit);
+if kasdin   % |B|^2 of the digital Butterworth that splits the time-domain oscillator
+    wc   = tan(pi*o.fsplit/o.fs_slow);
+    wfun = @(f) (abs(f) < o.fs_slow/2)./(1 + (tan(pi*min(abs(f), o.fs_slow/2)/o.fs_slow)/wc).^o.nsplit);
+else
+    wfun = @(f) 1./(1 + (abs(f)/o.fsplit).^o.nsplit);
+end
 
 %% Fast-block layout: TWTT instant at i0; pulse in the same block if it fits
 Nb   = o.Nb;
@@ -124,11 +143,19 @@ if o.verbose
         N_s, T, o.fs_slow/1e3, numel(ch.stages));
 end
 A_s = chain_amps(ch, Sosc, f_s, o.fs_slow, wfun(f_s));
+if kasdin, A_s.osc(:) = 0; end                 % oscillator added in the time domain below
 for n = 1:2
     [Xo, Xs, Xl] = chain_gen(A_s, ch, N_s);
     slow(n).osc = ifft(Xo, 'symmetric');                               %#ok<AGROW>
     slow(n).sys = ifft(Xs, 'symmetric');
     slow(n).lo  = ifft(Xl, 'symmetric');
+    if kasdin
+        [xo, xs, xl] = osc_kasdin(ch, f_osc, o.osc.h, N_s, o.fs_slow, o.fsplit, o.nsplit);
+        slow(n).osc = slow(n).osc + xo;
+        slow(n).sys = slow(n).sys + xs;
+        slow(n).lo  = slow(n).lo  + xl;
+        clear xo xs xl
+    end
     G(n).sys = griddedInterpolant(t_s, slow(n).sys, 'spline');          %#ok<AGROW>
     G(n).lo  = griddedInterpolant(t_s, slow(n).lo,  'spline');
 end
@@ -373,6 +400,44 @@ S  = zeros(size(af));
 k  = af > 0;
 lf = min(log10(af(k)), log10(fm(end)));
 S(k) = 2*10.^(interp1(log10(fm), L, lf, 'linear', 'extrap')/10);
+end
+
+function S = S_from_h(f0, h, af)
+% One-sided S_phi (rad^2/Hz) at carrier f0 from S_y(f) = sum h_b f^b, b = 2..-2.
+S = zeros(size(af));
+k = af > 0;
+S(k) = f0^2*(af(k).^((2:-1:-2) - 2))*h(:);
+end
+
+function [xo, xs, xl] = osc_kasdin(ch, f0, h, N, fs, fsplit, nsplit)
+% Slow part of the power-law reference and its path to SYS and LO, in the time
+% domain. Each term h_b is white noise through Kasdin's (1 - z^-1)^(-alpha/2),
+% alpha = 2 - b (N. J. Kasdin, Proc. IEEE 83(5), 1995), whose one-sided PSD
+% 2Q/fs |2 sin(pi f/fs)|^-alpha matches f0^2 h_b f^-alpha for f << fs. Then the
+% split filter (Butterworth, |B|^2 = w(f)) and each PLL's H(s), bilinear at fs.
+M  = 2*N;
+xo = zeros(N,1);
+for k = find(h(:).' ~= 0)
+    alpha = k - 1;
+    Q = f0^2*h(k)*fs/2*(2*pi/fs)^alpha;
+    g = cumprod([1; (alpha/2 + (0:N-2).')./(1:N-1).']);
+    x = ifft(fft(sqrt(Q)*randn(N,1), M).*fft(g, M), 'symmetric');
+    xo = xo + x(1:N);
+end
+[bw, aw] = butter(nsplit/2, fsplit/(fs/2));
+xo = filter(bw, aw, xo);
+x  = xo;  xs = [];
+for i = 1:numel(ch.stages)
+    st = ch.stages(i);
+    x  = st.kappa*x;
+    if strcmp(st.type, 'pll')
+        wn = 2*pi*st.fn;
+        [bd, ad] = bilinear([2*st.zeta*wn wn^2], [1 2*st.zeta*wn wn^2], fs);
+        x = filter(bd, ad, x);
+    end
+    if i == ch.i_sys, xs = x/ch.sys_div; end
+end
+xl = x;
 end
 
 function S = floor_S(Lfloor, af)

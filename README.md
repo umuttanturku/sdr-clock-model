@@ -40,7 +40,7 @@ matlab -batch "res = sdr_clock_model_tworate(struct('T_req', 20, 'saveResults', 
 | --- | --- | --- |
 | `T_req` | 100 | Record length (s); rounded up to a power-of-two sample count |
 | `chain` | `[]` | Noise chain from the 10 MHz reference to the LO; `[]` = built-in two-PLL tables |
-| `osc` | TCXO-like `L(f)` table | Reference-oscillator phase noise at `osc.f0` = 10 MHz |
+| `osc` | TCXO-like `L(f)` table | Reference-oscillator phase noise at `osc.f0` = 10 MHz: an `L(f)` table (`fm`, `L`), or power-law coefficients `h = [h2 h1 h0 h-1 h-2]`, which switches the oscillator's slow part to Kasdin's time-domain generator (non-stationary wander, for holdover) |
 | `timing` | `'crlb'` | `'crlb'`: TWTT error from Eqs. 22, 24 at `snr_dB`; `'fixed'`: use `sigT` |
 | `snr_dB` | 27 | Pre-integration SNR of each TWTT pulse (dB) |
 | `crlb_excess` | 1 | Estimator std / CRLB std (3.17 reproduces the paper's ~65 ps at 27 dB) |
@@ -88,7 +88,8 @@ Large results are written to the data folder (or to `opts.outDir` if given): tim
 Details and sources: [docs/RESULTS.md](docs/RESULTS.md).
 
 - With the same inputs, this model and merlo_flow agree on median coherent gain to 0.2% (0.990 vs 0.991).
-- The paper's reported spreads (about 65 ps, 23° and 2 ppb at 27 dB) are reproduced by a TWTT time error of 3.2× the CRLB. With the guessed reference oscillator, oscillator and PLL noise add only about 1° at 5 ms; with published typical-TCXO coefficients they add about 7° at 5 ms and 33–36° at 40 ms, so the reference profile matters for late pulses.
+- The paper's reported spreads (about 65 ps, 23° and 2 ppb at 27 dB) are reproduced by a TWTT time error of 3.2× the CRLB. With the guessed reference oscillator, oscillator and PLL noise add only about 1° at 5 ms; with published typical-TCXO coefficients they add about 6.5° at 5 ms and 34–36° at 40 ms, so the reference profile matters for late pulses.
+- A power-law oscillator (`osc.h`) is generated with Kasdin's time-domain filter, so its random-walk wander keeps growing over long records (ADEV within 10% of the h-model at τ = 25 s, where FFT generation is 37% low).
 - Median coherent gain passes 0.99 at 21 dB SNR at the CRLB, but needs 30 dB at paper-level error.
 - Coherence falls the later a pulse fires in the 44 ms epoch, because Δf comes from two noisy timestamps. At paper-level error the median drops from 0.98 to 0.91.
 

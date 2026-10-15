@@ -42,7 +42,7 @@ Known weaknesses of the X310 chain, all inherited from merlo_flow's parameters:
 - The VCXO and the LO VCO are stand-ins (CVHD-950, MAX2871 VCO); the X310's actual parts have no published noise data.
 - The fit target is Ettus' TX output noise (LO, mixer, DAC and amplifier) at 2.4 GHz, with the reference used for the measurement not stated; it is moved to 2.1 GHz by −1.2 dB without a separate check.
 
-The reference oscillator is a guessed TCXO-like profile (−65 dBc/Hz at 1 Hz, ADEV floor about 9e-11) with no source. The X310's internal reference is a 2.5 ppm TCXO, but no measured profile is published. Published typical-TCXO power-law coefficients (Kassas et al. 2014; Curran et al. 2012) are 12–22 dB noisier below 50 Hz and raise the clock's contribution several-fold at pulse delays of 5 ms and more; see `docs/RESULTS.md`. `run_studies.m` (`osc_from_h`) builds that profile as an `osc` table.
+The reference oscillator is a guessed TCXO-like profile (−65 dBc/Hz at 1 Hz, ADEV floor about 9e-11) with no source. The X310's internal reference is a 2.5 ppm TCXO, but no measured profile is published. Published typical-TCXO power-law coefficients (Kassas et al. 2014; Curran et al. 2012) are 12–22 dB noisier below 50 Hz and raise the clock's contribution several-fold at pulse delays of 5 ms and more; see `docs/RESULTS.md`. Pass it as `osc.h` to use it (Kasdin generator, below).
 
 ## Two-rate generation
 
@@ -56,6 +56,18 @@ S(f) = w(f) S(f) + (1 − w(f)) S(f),    w(f) = 1 / (1 + (f / fsplit)^8)
 - **Fast part**: generated at `fs_fast` = 4 MHz in blocks of `Nb` = 2^15 samples (8.2 ms), one fresh block per node per TWTT epoch, covering the exchange and the pulse after it. When the pulse falls outside the block, it gets its own fresh block.
 
 The two parts come from independent noise, so their PSDs add back to exactly S(f). The fast part has no content below about 2 kHz, so its correlation time is well under 1 ms and blocks 44 ms apart are effectively independent. The split is applied per noise source, before the PLL filtering, so the correlation between the SYS clock and the LO of one node is kept.
+
+### Power-law oscillator (Kasdin)
+
+FFT shaping makes each record one period of a stationary process, so there is nothing below 1/T and flicker and random-walk FM lose the wander that keeps growing with time. That matters for holdover. When the reference is given as power-law coefficients, `osc.h = [h2 h1 h0 h−1 h−2]` with S_y(f) = Σ h_b f^b, its slow part is generated in the time domain instead:
+
+- Each term is white noise through Kasdin's fractional-difference filter (1 − z⁻¹)^(−α/2), α = 2 − b (N. J. Kasdin, Proc. IEEE 83(5), 1995), done as a zero-padded FFT convolution. The filter starts at rest at t = 0, so the phase starts at zero and wanders like a free-running clock. Its PSD, 2Q/f_s·|2 sin(πf/f_s)|^(−α), matches f0² h_b f^(−α) for f ≪ f_s.
+- The split weight becomes the response of a digital Butterworth of order `nsplit`/2, |B|² = 1/(1 + (tan(πf/f_s)/tan(πf_split/f_s))^nsplit), applied as a filter to the oscillator and as w(f) to every other source.
+- The oscillator then passes through each PLL's H(s), discretized by the bilinear transform at `fs_slow`, and the stage multipliers. The VCO, in-band and floor sources stay on the FFT path; they sit at high offsets and are stationary.
+
+The fast part is unchanged. A table oscillator (`osc.fm`, `osc.L`, the default) keeps the FFT path, so existing results are unchanged.
+
+Checked on 15 Oct 2026 (`run_studies.m` sections 5 and 6, X310 chain): the PSD self-check stays within ±0.10 dB, the millisecond-scale results match FFT generation of the same profile within scatter, and the SYS-clock ADEV follows the h-model to within 0–10% out to τ = 25 s, where FFT generation is 37% low.
 
 **Check**: the model compares the simulated PSDs (slow + fast) with the analytic chain on every run and reports `res.psd_err_dB`. On 15 Oct 2026 the mean difference over 1 Hz–1 MHz was +0.02 to +0.03 dB for both chains.
 
@@ -78,7 +90,7 @@ Eq. 32 extrapolates the frequency estimate from the TWTT instant to the pulse. B
 σ(t) = σT · sqrt( (1 + t/τ)² + (t/τ)² ),   τ = tau_twtt
 ```
 
-That is about 2.1× σT at the end of a 44 ms epoch. With the guessed reference, LO wander over the same interval adds about 1° at 5 ms and 1–5° at 44 ms at 1 GHz, depending on the chain. With the published typical-TCXO coefficients it adds about 7° at 5 ms and 33–36° at 40 ms (X310 chain).
+That is about 2.1× σT at the end of a 44 ms epoch. With the guessed reference, LO wander over the same interval adds about 1° at 5 ms and 1–5° at 44 ms at 1 GHz, depending on the chain. With the published typical-TCXO coefficients it adds about 6.5° at 5 ms and 34–36° at 40 ms (X310 chain).
 
 ## Assumptions and limits
 
@@ -86,5 +98,6 @@ That is about 2.1× σT at the end of a 44 ms epoch. With the guessed reference,
 - No acquisition phase (Table B-I), multipath, Doppler, vibration, spurs or hardware non-idealities.
 - One LO per node for transmit and receive. Static phase offsets are assumed calibrated out.
 - Phase noise is treated as additive phase (small-angle); the PSDs are S_φ, not the measured L(f) of a signal near the carrier.
-- Offsets below about 1/T are not represented, and offsets above `fs_fast`/2 = 2 MHz are not either.
+- With a table oscillator, offsets below about 1/T are not represented; with `osc.h` the oscillator's low-frequency wander is (Kasdin), but the PLL and VCO sources are still periodic over T. Offsets above `fs_fast`/2 = 2 MHz are not represented.
+- Long holdover runs are limited by memory: the slow part holds fs_slow·T samples per signal (about 2e6 for 100 s at 20 kHz). Hours need a lower `fs_slow` and `fsplit`, which in turn needs longer fast blocks.
 - Two nodes only.

@@ -93,7 +93,7 @@ The timing-only prediction σT·√((1 + t/τ)² + (t/τ)²) tracks these values
 
 ### Reference oscillator profile (X310 chain)
 
-Section 5 of `run_studies.m`, `oscillator.csv`. The guessed TCXO table against a typical TCXO built from published power-law coefficients: h0 = 9.4e-20, h₋₂ = 3.8e-21 (Kassas, Ghadiok, Humphreys, ION GNSS+ 2014, Table I), and the same plus the flicker term h₋₁ = 1.8e-19 that source drops (Curran et al. 2012, Table I, after Van Dierendonck 1984). Both get the guessed table's −155 dBc/Hz white PM floor.
+Section 5 of `run_studies.m`, `oscillator.csv`. The guessed TCXO table against a typical TCXO built from published power-law coefficients: h0 = 9.4e-20, h₋₂ = 3.8e-21 (Kassas, Ghadiok, Humphreys, ION GNSS+ 2014, Table I), and the same plus the flicker term h₋₁ = 1.8e-19 that source drops (Curran et al. 2012, Table I, after Van Dierendonck 1984). Both get the guessed table's −155 dBc/Hz white PM floor (as h2) and run on the Kasdin generator (`osc.h`); the guess runs on the FFT path.
 
 | Profile | L(f) at 1 / 10 / 100 / 1k Hz (dBc/Hz, 10 MHz) | ADEV at 1 ms / 10 ms / 0.1 s / 1 s |
 | --- | --- | --- |
@@ -105,17 +105,30 @@ Clock-only residual (no TWTT error, σT = 0): spread of the pulse-mean phase at 
 
 | Pulse after TWTT | Guess | h, 2 terms | h, 3 terms |
 | --- | --- | --- | --- |
-| 1 ms | 0.24° | 1.41° | 1.47° |
-| 5 ms | 0.56° | 6.88° | 7.24° |
-| 20 ms | 1.64° | 20.1° | 21.7° |
-| 40 ms | 3.05° | 32.9° (median Gᴄ 0.962) | 36.5° (median Gᴄ 0.954) |
-| Δf̂ std from clock noise alone | 0.25–0.32 ppb | 1.6–1.8 ppb | 2.1–2.4 ppb |
+| 1 ms | 0.24° | 1.36° | 1.43° |
+| 5 ms | 0.56° | 6.48° | 6.69° |
+| 20 ms | 1.64° | 21.1° | 21.5° |
+| 40 ms | 3.05° | 34.3° (median Gᴄ 0.960) | 35.5° (median Gᴄ 0.955) |
+| Δf̂ std from clock noise alone | 0.25–0.32 ppb | 1.5–1.7 ppb | 2.0–2.4 ppb |
 
-With TWTT error at 27 dB and the pulse at 1 ms, the profile hardly matters: phase std 7.27 / 7.41 / 7.41° at the bound and 23.0 / 23.1 / 23.1° at 3.17×. The Δf̂ spread does change, 0.69 / 1.82 / 2.47 ppb at the bound and 2.02 / 2.56 / 3.05 ppb at 3.17× (paper: 2.04 ppb).
+With TWTT error at 27 dB and the pulse at 1 ms, the profile hardly matters: phase std 7.27 / 7.32 / 7.64° at the bound and 23.0 / 23.0 / 23.8° at 3.17×. The Δf̂ spread does change, 0.69 / 1.64 / 2.44 ppb at the bound and 2.02 / 2.46 / 3.14 ppb at 3.17× (paper: 2.04 ppb).
 
-- The "oscillator and PLL add about 1°" result holds only for the guessed reference. With the published typical-TCXO coefficients the clock adds about 7° at 5 ms and 33–36° at 40 ms, comparable to the TWTT error, and late pulses lose much more coherence.
+- The "oscillator and PLL add about 1°" result holds only for the guessed reference. With the published typical-TCXO coefficients the clock adds about 6.5° at 5 ms and 34–36° at 40 ms, comparable to the TWTT error, and late pulses lose much more coherence.
 - The two bracket the likely truth rather than settle it. The h-coefficients are a timekeeping fit, and their white FM term runs on to offsets where real TCXOs are quieter (−113 dBc/Hz at 1 kHz). Most of the reference's effect comes from below PLL1's 50 Hz loop bandwidth, where the two profiles differ by about 12–22 dB.
-- At 3.17× the h profiles give a Δf̂ spread of 2.6–3.0 ppb, above the paper's 2.04 ppb; the guess gives 2.02 ppb. Either the X310 reference is quieter than the typical-TCXO coefficients, or less of the paper's error is TWTT excess. A measured profile would decide.
+- At 3.17× the h profiles give a Δf̂ spread of 2.5–3.1 ppb, above the paper's 2.04 ppb; the guess gives 2.02 ppb. Either the X310 reference is quieter than the typical-TCXO coefficients, or less of the paper's error is TWTT excess. A measured profile would decide.
+- An earlier run of this section generated the h profiles as L(f) tables on the FFT path; its numbers (e.g. 7.24° at 5 ms, 36.5° at 40 ms for 3 terms) agree with these within run-to-run scatter, as expected over milliseconds.
+
+### Long-record wander: Kasdin vs. FFT generation
+
+Section 6 of `run_studies.m`. The 3-term profile generated both ways; overlapping ADEV of the SYS clock's slow part over 105 s records, mean of 4 seeds, against the h-model σ_y² = h0/(2τ) + 2 ln2·h₋₁ + (2π²/3)·h₋₂·τ.
+
+| τ (s) | 0.1 | 1 | 5 | 10 | 25 |
+| --- | --- | --- | --- | --- | --- |
+| h-model | 8.5e-10 | 5.7e-10 | 6.2e-10 | 7.1e-10 | 9.4e-10 |
+| Kasdin (`osc.h`) | 8.8e-10 (1.0) | 5.6e-10 (0.99) | 6.4e-10 (1.0) | 7.4e-10 (1.0) | 1.0e-9 (1.1) |
+| FFT (L table) | 8.8e-10 (1.0) | 5.3e-10 (0.94) | 5.9e-10 (0.94) | 6.3e-10 (0.89) | 5.9e-10 (0.63) |
+
+Ratios to the h-model in brackets. Kasdin follows the random-walk rise out to τ = T/4; FFT generation loses it from a few seconds on and is 37% low at T/4. Use `osc.h` for holdover and any ADEV at τ comparable to the record.
 
 ## Open questions
 

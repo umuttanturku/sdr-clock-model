@@ -8,6 +8,8 @@
 %   3  SNR sweep (paper Fig. 11 axis): time error, phase and coherent gain,
 %      at the CRLB and with the estimator excess that matches the paper
 %   4  Pulse timing across the 44 ms epoch
+%   5  Reference oscillator: guessed table vs. published TCXO coefficients
+%   6  Long-record ADEV: Kasdin vs. FFT generation of the oscillator
 % merlo_flow is used read-only from the folder given by clockmodel_paths (.mf).
 % Outputs: <data>\studies
 clear; clc; close all;
@@ -111,10 +113,13 @@ writetable(S4, fullfile(outDir, 'pulse_timing.csv'));
 % Typical TCXO: h0 = 9.4e-20, h-2 = 3.8e-21 (Kassas, Ghadiok, Humphreys, ION
 % GNSS+ 2014, Table I); that source drops the flicker term h-1 = 1.8e-19 given by
 % Curran et al. 2012, Table I (after Van Dierendonck 1984). A white PM floor of
-% -155 dBc/Hz, as in the guessed table, is added to both.
+% -155 dBc/Hz, as in the guessed table, is added to both (h2 term). The h
+% profiles use the model's Kasdin generator (osc.h).
 fprintf('\n== 5. Reference oscillator profile (X310 chain) ==\n');
-fm = logspace(-2, 6, 41);
-oscs = {[], osc_from_h(fm, 9.4e-20, 0, 3.8e-21, -155), osc_from_h(fm, 9.4e-20, 1.8e-19, 3.8e-21, -155)};
+h2f  = 2*10^(-15.5)/(10e6)^2;      % -155 dBc/Hz white PM at 10 MHz
+hTC2 = [h2f 0 9.4e-20 0       3.8e-21];
+hTC3 = [h2f 0 9.4e-20 1.8e-19 3.8e-21];
+oscs = {[], struct('f0', 10e6, 'h', hTC2), struct('f0', 10e6, 'h', hTC3)};
 oname = {'guess', 'h 2-term', 'h 3-term'};
 tau_a = [1e-3 1e-2 0.1 1];
 for oi = 1:3
@@ -146,8 +151,31 @@ for oi = 1:3
 end
 writetable(S5, fullfile(outDir, 'oscillator.csv'));
 
+%% 6) Long-record wander: Kasdin vs. FFT generation --------------------------
+% Same 3-term profile, once as osc.h (Kasdin) and once as an L(f) table (FFT,
+% periodic, nothing below 1/T). SYS-clock ADEV over 105 s records, 4 seeds each,
+% against the h-model: sigma_y^2 = h0/(2 tau) + 2 ln2 h-1 + (2 pi^2/3) h-2 tau.
+fprintf('\n== 6. Long-record ADEV, Kasdin vs. FFT (X310 chain, h 3-term) ==\n');
+tq = [0.1 1 5 10 25];
+an = sqrt(hTC3(3)./(2*tq) + 2*log(2)*hTC3(4) + (2*pi^2/3)*hTC3(5)*tq);
+fprintf('  tau (s)            : %s\n  h-model analytic   : %s\n', mat2str(tq), mat2str(an, 2));
+g6 = {struct('f0', 10e6, 'h', hTC3), osc_from_h(logspace(-2, 6, 41), hTC3(3), hTC3(4), hTC3(5), -155)};
+n6 = {'Kasdin (osc.h)', 'FFT (L table)'};
+A6 = zeros(2, numel(tq));
+for m = 1:2
+    a = zeros(4, numel(tq));
+    for s = 1:4
+        o = quiet; o.chain = chX; o.osc = g6{m}; o.T_req = 100; o.tau_twtt = 1;
+        o.timing = 'fixed'; o.sigT = 0; o.makeFigures = true; o.seed = 40 + s;
+        r = sdr_clock_model_tworate(o);  close all;
+        a(s,:) = interp1(log(r.adev.tau), r.adev.adev, log(tq));
+    end
+    A6(m,:) = mean(a);
+    fprintf('  %-19s: %s  (ratio %s)\n', n6{m}, mat2str(A6(m,:), 2), mat2str(A6(m,:)./an, 2));
+end
+
 save(fullfile(outDir, 'studies_results.mat'), 'c', 'v1mf', 'excess_paper', 'd_lo', 'Lx', 'Ld', 'mL', ...
-    'S3', 'S4', 'S5', 'snr', 'tbf');
+    'S3', 'S4', 'S5', 'A6', 'tq', 'an', 'snr', 'tbf');
 fprintf('\nOutputs in %s\n', outDir);
 diary off;
 
