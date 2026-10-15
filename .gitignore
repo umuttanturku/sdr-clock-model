@@ -1,0 +1,24 @@
+# Third-party code: private repo owned by someone else, used read-only. Never commit.
+merlo-flow-main.zip
+merlo-flow-main/
+merlo_flow/
+
+# Paper PDFs (copyright): cite the DOI instead
+*.pdf
+
+# Per-machine paths (see clockmodel_config_example.m) and the default output folder
+clockmodel_config.m
+output/
+
+# Results and logs (written to D:\ClockModelData, but keep strays out too)
+*.mat
+*.fig
+*_log.txt
+*.csv
+figures/
+
+# MATLAB autosave and caches
+*.asv
+*.m~
+slprj/
+*.mex*
